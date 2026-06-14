@@ -13,7 +13,7 @@ The LLM provider is **configurable** via the `LLM_PROVIDER` env var:
 - **Bot Type**: Web
 - **Transport(s)**: SmallWebRTC, Daily (WebRTC)
 - **Pipeline**: Cascade
-  - **STT**: Deepgram
+  - **STT**: Cartesia
   - **LLM**: Ollama (`qwen2.5:3b`, local, default) or DeepSeek (`deepseek-chat`)
   - **TTS**: Cartesia
 
@@ -51,7 +51,7 @@ No API key or balance is required — the model runs locally.
    # Edit .env and add your API keys
    ```
 
-   Required keys: `DEEPGRAM_API_KEY` (STT), `CARTESIA_API_KEY` (TTS). The LLM is
+   Required key: `CARTESIA_API_KEY` (used for both STT and TTS). The LLM is
    local Ollama by default (no key needed); set `LLM_PROVIDER=deepseek` and
    `DEEPSEEK_API_KEY` to use DeepSeek instead. `DAILY_API_KEY` is only needed
    for the Daily transport.
