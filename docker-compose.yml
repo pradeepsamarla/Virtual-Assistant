@@ -1,0 +1,60 @@
+# One-command local deploy: Ollama (local LLM) + the Pipecat bot with the
+# 3D-avatar web client. Usage:
+#
+#   echo "CARTESIA_API_KEY=sk_car_..." > .env
+#   docker compose up --build
+#
+# then open http://localhost:7860/avatar/
+#
+# The only required value is CARTESIA_API_KEY (used for STT + TTS). Everything
+# else (LLM, model, URLs) is wired automatically. The model is pulled once into
+# a named volume and reused on later runs.
+
+services:
+  # Local LLM runtime.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: va-ollama
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    restart: unless-stopped
+
+  # One-shot: pull the model into the shared volume, then exit.
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c", "ollama pull ${OLLAMA_MODEL:-qwen2.5:3b}"]
+    restart: "no"
+
+  # The voice assistant + avatar client.
+  bot:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.local
+    # Host networking lets WebRTC media reach the browser without publishing an
+    # ephemeral UDP port range (required on Linux/WSL2 for SmallWebRTC).
+    network_mode: host
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+    environment:
+      CARTESIA_API_KEY: ${CARTESIA_API_KEY:?set CARTESIA_API_KEY in .env}
+      CARTESIA_VOICE_ID: ${CARTESIA_VOICE_ID:-}
+      LLM_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://127.0.0.1:11434/v1
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+    restart: unless-stopped
+
+volumes:
+  ollama:

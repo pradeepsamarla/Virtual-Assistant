@@ -1,0 +1,41 @@
+# Self-hosted image: runs the Pipecat bot + 3D-avatar web client locally.
+# (The Pipecat Cloud image lives in ./Dockerfile and uses an arm64-only base.)
+FROM python:3.12-slim
+
+# uv: fast Python package manager.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Runtime native libs:
+#   libgomp1                       - onnxruntime (Silero VAD)
+#   libgl1, libglib2.0-0, libxcb1, - OpenCV (cv2), imported by the WebRTC
+#   libsm6, libxext6, libxrender1    transport
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libgomp1 \
+        libgl1 \
+        libglib2.0-0 \
+        libxcb1 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+WORKDIR /app
+
+# Install dependencies first so this layer is cached across code changes.
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-install-project --no-dev
+
+# Application code + the avatar client served at /avatar/.
+COPY bot.py ./
+COPY client ./client
+
+ENV PATH="/app/.venv/bin:$PATH"
+EXPOSE 7860
+
+# Bind 0.0.0.0 so the server is reachable outside the container.
+CMD ["python", "bot.py", "--host", "0.0.0.0"]

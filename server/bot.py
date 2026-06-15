@@ -46,6 +46,17 @@ from pipecat.workers.runner import WorkerRunner
 
 load_dotenv(override=True)
 
+
+def env(name: str, default: str) -> str:
+    """Like os.getenv but treats an empty/whitespace value as unset.
+
+    A blank line in .env (e.g. ``OLLAMA_MODEL=``) otherwise overrides the
+    default with an empty string, which breaks the service call.
+    """
+    value = os.getenv(name)
+    return value.strip() if value and value.strip() else default
+
+
 SYSTEM_PROMPT = (
     "You are a helpful virtual assistant in a real-time voice conversation. "
     "Listen carefully to the user, answer their questions, and reason through "
@@ -67,24 +78,24 @@ async def run_bot(transport: BaseTransport):
     tts = CartesiaTTSService(
         api_key=os.getenv("CARTESIA_API_KEY"),
         settings=CartesiaTTSService.Settings(
-            voice=os.getenv("CARTESIA_VOICE_ID", "71a7ad14-091c-4e8e-a314-022ece01c121"),
+            voice=env("CARTESIA_VOICE_ID", "71a7ad14-091c-4e8e-a314-022ece01c121"),
         ),
     )
 
     # LLM service - local Ollama by default (free, no API key), or DeepSeek.
-    provider = os.getenv("LLM_PROVIDER", "ollama").lower()
+    provider = env("LLM_PROVIDER", "ollama").lower()
     if provider == "deepseek":
         llm = DeepSeekLLMService(
             api_key=os.getenv("DEEPSEEK_API_KEY"),
             settings=DeepSeekLLMService.Settings(
-                model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+                model=env("DEEPSEEK_MODEL", "deepseek-chat"),
             ),
         )
     else:
         llm = OLLamaLLMService(
-            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+            base_url=env("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
             settings=OLLamaLLMService.Settings(
-                model=os.getenv("OLLAMA_MODEL", "qwen2.5:3b"),
+                model=env("OLLAMA_MODEL", "qwen2.5:3b"),
             ),
         )
     logger.info(f"Using LLM provider: {provider}")

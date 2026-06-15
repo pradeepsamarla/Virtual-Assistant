@@ -80,6 +80,45 @@ The client is served same-origin by the bot (FastAPI `StaticFiles`) so the
 WebRTC offer to `/api/offer` has no CORS issues. The stock Pipecat Playground
 remains available at `/client/` for audio-only testing.
 
+## Run with Docker (recommended — one command, no local installs)
+
+The whole stack (local LLM + bot + 3D-avatar client) runs from Docker Compose.
+You don't install Python, uv, or Ollama — only Docker. The model is pulled
+automatically into a named volume on first run and reused afterwards.
+
+**Prerequisites:** [Docker](https://docs.docker.com/get-docker/) (with Compose v2)
+and a free [Cartesia](https://play.cartesia.ai) API key.
+
+```bash
+# 1. Clone
+git clone https://github.com/<owner>/<repo>.git
+cd <repo>
+
+# 2. Provide your Cartesia key (the only required value)
+echo "CARTESIA_API_KEY=sk_car_..." > .env
+
+# 3. Bring everything up (first run builds the image + pulls the model)
+docker compose up --build
+```
+
+Then open **http://localhost:7860/avatar/** and click **Start conversation**.
+
+What it starts:
+- `ollama` — local LLM runtime; a one-shot `ollama-pull` service auto-pulls
+  `qwen2.5:3b` into a persistent volume.
+- `bot` — the Pipecat bot + avatar client on port 7860, wired to the Ollama
+  container automatically (`OLLAMA_BASE_URL`, model name, etc.).
+
+Optional overrides go in `.env` (e.g. `CARTESIA_VOICE_ID=...`,
+`OLLAMA_MODEL=qwen2.5:7b`). To stop: `docker compose down` (add `-v` to also
+delete the cached model).
+
+> **Networking note:** the `bot` service uses `network_mode: host` so WebRTC
+> media can reach the browser without publishing an ephemeral UDP port range.
+> This works on Linux and WSL2. On Docker Desktop for macOS/Windows, host
+> networking is limited — use the "Run on your own machine" path below instead,
+> or run inside a Linux/WSL2 host.
+
 ## Run on your own machine (quick install)
 
 Works on macOS, Linux, or Windows (WSL recommended). Everything except Cartesia
@@ -121,6 +160,24 @@ model into memory.
 > No GPU required. The first run downloads the model; later runs are offline
 > except for Cartesia speech.
 
+### Troubleshooting
+
+- **`Error during completion: Connection error` (Ollama):** the bot can't reach
+  Ollama. Make sure `ollama serve` is running, then on WSL/Linux prefer
+  `127.0.0.1` over `localhost` — `localhost` may resolve to IPv6 (`::1`) while
+  Ollama listens on IPv4. Set `OLLAMA_BASE_URL=http://127.0.0.1:11434/v1`.
+- **`Error code: 400 ... invalid model name`:** the model name is empty. This
+  happens if `.env` has `OLLAMA_MODEL=` (blank). Set `OLLAMA_MODEL=qwen2.5:3b`
+  (and run `ollama pull qwen2.5:3b`). Blank values now fall back to defaults.
+- **No `sudo` password (e.g. WSL):** install Ollama without root by extracting
+  the release tarball into your home dir and adding it to `PATH`:
+  ```bash
+  curl -fL https://ollama.com/download/ollama-linux-amd64.tgz -o ollama.tgz
+  mkdir -p ~/.ollama-install && tar -xzf ollama.tgz -C ~/.ollama-install
+  echo 'export PATH="$HOME/.ollama-install/bin:$PATH"' >> ~/.bashrc
+  export PATH="$HOME/.ollama-install/bin:$PATH"
+  ```
+
 ## Project Structure
 
 ```
@@ -134,8 +191,10 @@ pipecat-quickstart/
 │   ├── pyproject.toml   # Python dependencies
 │   ├── .env.example     # Environment variables template
 │   ├── .env             # Your API keys (git-ignored)
-│   ├── Dockerfile       # Container image for Pipecat Cloud
+│   ├── Dockerfile       # Container image for Pipecat Cloud (arm64 base)
+│   ├── Dockerfile.local # Self-hosted image used by docker compose
 │   └── pcc-deploy.toml  # Pipecat Cloud deployment config
+├── docker-compose.yml   # One-command local deploy (Ollama + bot)
 ├── .gitignore           # Git ignore patterns
 └── README.md            # This file
 ```
