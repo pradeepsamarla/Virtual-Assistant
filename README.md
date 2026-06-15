@@ -61,12 +61,35 @@ No API key or balance is required — the model runs locally.
    - SmallWebRTC: `uv run bot.py`
    - Daily: `uv run bot.py --transport daily`
 
+## 3D talking avatar (local lip-sync)
+
+A custom web client renders a 3D avatar whose mouth lip-syncs to the bot's
+speech in real time. It runs entirely in the browser with **no GPU**: the bot's
+audio is analyzed client-side ([HeadAudio](https://github.com/met4citizen/TalkingHead)
+MFCC + viseme classifier) and mapped onto the avatar's morph targets via
+[TalkingHead.js](https://github.com/met4citizen/TalkingHead) + Three.js.
+
+- Start the bot, then open **http://localhost:7860/avatar/**
+- Click **Start conversation**. The avatar greets you; talk (if you have a mic)
+  or type in the box. The mouth animates while it speaks.
+- The default avatar is a [Ready Player Me](https://readyplayer.me) model. Swap
+  in your own by appending `?avatar=<RPM_glb_url>` (optionally `&body=M`), e.g.
+  `http://localhost:7860/avatar/?avatar=https://models.readyplayer.me/<id>.glb`
+
+The client is served same-origin by the bot (FastAPI `StaticFiles`) so the
+WebRTC offer to `/api/offer` has no CORS issues. The stock Pipecat Playground
+remains available at `/client/` for audio-only testing.
+
 ## Project Structure
 
 ```
 pipecat-quickstart/
 ├── server/              # Python bot server
 │   ├── bot.py           # Main bot implementation
+│   ├── client/          # Custom 3D-avatar web client (served at /avatar/)
+│   │   ├── index.html   # Avatar UI + Pipecat JS SDK + lip-sync wiring
+│   │   ├── avatars/     # Ready Player Me GLB model(s)
+│   │   └── vendor/      # HeadAudio worklet + viseme model (vendored)
 │   ├── pyproject.toml   # Python dependencies
 │   ├── .env.example     # Environment variables template
 │   ├── .env             # Your API keys (git-ignored)

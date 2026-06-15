@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Virtual Assistant — 3D Avatar</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #0b0f1a; color: #e7ecf3; height: 100vh; overflow: hidden;
+    }
+    #app { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; }
+    header {
+      display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+      border-bottom: 1px solid #1d2740; background: #0e1424;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+    .status { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #9fb0c9; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #5b6577; }
+    .dot.on { background: #34d399; box-shadow: 0 0 8px #34d399; }
+    .dot.speaking { background: #60a5fa; box-shadow: 0 0 10px #60a5fa; }
+    main { position: relative; min-height: 0; }
+    #avatar { width: 100%; height: 100%; }
+    #overlay {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 14px; background: rgba(8,12,22,.75); text-align: center; padding: 24px;
+    }
+    #overlay.hidden { display: none; }
+    .muted { color: #9fb0c9; font-size: 14px; max-width: 440px; line-height: 1.5; }
+    button {
+      font: inherit; border: 0; border-radius: 8px; padding: 10px 18px; cursor: pointer;
+      background: #3b82f6; color: white; font-weight: 600;
+    }
+    button:hover { background: #2f6fd6; }
+    button:disabled { background: #38415a; color: #7c8aa3; cursor: not-allowed; }
+    button.secondary { background: #1d2740; color: #cdd8ea; }
+    footer { padding: 12px 18px; border-top: 1px solid #1d2740; background: #0e1424; }
+    .row { display: flex; gap: 10px; align-items: center; }
+    #text { flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid #2a3650; background: #0b1120; color: #e7ecf3; }
+    #text:disabled { opacity: .5; }
+    #log {
+      position: absolute; left: 14px; bottom: 14px; max-width: 46%; max-height: 40%;
+      overflow-y: auto; font-size: 13px; line-height: 1.45; background: rgba(10,15,28,.7);
+      border: 1px solid #1d2740; border-radius: 10px; padding: 10px 12px; backdrop-filter: blur(4px);
+    }
+    #log .u { color: #9fb0c9; }
+    #log .a { color: #bfe0ff; }
+    #log p { margin: 4px 0; }
+    .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #16203a; color: #9fb0c9; border: 1px solid #243152; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js/+esm",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+      "talkinghead": "https://cdn.jsdelivr.net/npm/@met4citizen/talkinghead@1.7/modules/talkinghead.mjs",
+      "@pipecat-ai/client-js": "https://esm.sh/@pipecat-ai/client-js@1.11.0",
+      "@pipecat-ai/small-webrtc-transport": "https://esm.sh/@pipecat-ai/small-webrtc-transport@1.10.4?external=@pipecat-ai/client-js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Virtual Assistant</h1>
+      <span class="pill" id="provider">Cartesia STT · Ollama · Cartesia TTS</span>
+      <div class="status">
+        <span class="dot" id="dot"></span>
+        <span id="statusText">Idle</span>
+      </div>
+    </header>
+
+    <main>
+      <div id="avatar"></div>
+      <div id="log" aria-live="polite"></div>
+      <div id="overlay">
+        <div class="muted" id="loadMsg">Loading 3D avatar…</div>
+        <button id="connectBtn" disabled>Start conversation</button>
+        <div class="muted">The assistant will greet you, then you can talk (if you have a mic) or type below. The avatar lip-syncs to its speech in real time.</div>
+      </div>
+    </main>
+
+    <footer>
+      <div class="row">
+        <input id="text" type="text" placeholder="Type a message and press Enter…" disabled />
+        <button id="sendBtn" class="secondary" disabled>Send</button>
+        <button id="hangupBtn" class="secondary" disabled>Disconnect</button>
+      </div>
+    </footer>
+  </div>
+
+  <script type="module">
+    import { TalkingHead } from "talkinghead";
+    import { HeadAudio } from "./vendor/headaudio.min.mjs";
+    import { PipecatClient } from "@pipecat-ai/client-js";
+    import { SmallWebRTCTransport } from "@pipecat-ai/small-webrtc-transport";
+
+    const el = {
+      avatar: document.getElementById("avatar"),
+      overlay: document.getElementById("overlay"),
+      loadMsg: document.getElementById("loadMsg"),
+      connectBtn: document.getElementById("connectBtn"),
+      hangupBtn: document.getElementById("hangupBtn"),
+      sendBtn: document.getElementById("sendBtn"),
+      text: document.getElementById("text"),
+      dot: document.getElementById("dot"),
+      statusText: document.getElementById("statusText"),
+      log: document.getElementById("log"),
+    };
+
+    // Avatar URL is configurable: /avatar/?avatar=<RPM glb url>
+    const params = new URLSearchParams(location.search);
+    const AVATAR_URL = params.get("avatar") || "./avatars/brunette.glb";
+    const AVATAR_BODY = params.get("body") || "F";
+
+    const WORKLET_URL = "./vendor/headworklet.min.mjs";
+    const MODEL_URL = "./vendor/model-en-mixed.bin";
+
+    let head, headaudio, pcClient;
+    let connected = false;
+    let hasMic = false;
+    let idleStatus = "Ready (type below)";
+
+    function setStatus(text, mode) {
+      el.statusText.textContent = text;
+      el.dot.classList.toggle("on", mode === "on" || mode === "speaking");
+      el.dot.classList.toggle("speaking", mode === "speaking");
+    }
+    function logLine(role, text) {
+      if (!text) return;
+      const p = document.createElement("p");
+      p.className = role === "user" ? "u" : "a";
+      p.textContent = (role === "user" ? "You: " : "Assistant: ") + text;
+      el.log.appendChild(p);
+      el.log.scrollTop = el.log.scrollHeight;
+    }
+
+    // 1) Init TalkingHead and load the avatar.
+    async function initAvatar() {
+      head = new TalkingHead(el.avatar, {
+        ttsEndpoint: "N/A",      // We use our own TTS (Cartesia via the bot).
+        lipsyncModules: [],       // Lip-sync is audio-driven (HeadAudio), not text.
+        cameraView: "upper",
+        cameraRotateEnable: false,
+      });
+      await head.showAvatar({
+        url: AVATAR_URL,
+        body: AVATAR_BODY,
+        avatarMood: "neutral",
+        lipsyncLang: "en",
+      });
+    }
+
+    // 2) Init HeadAudio: audio-driven, real-time viseme detection.
+    async function initHeadAudio() {
+      await head.audioCtx.audioWorklet.addModule(WORKLET_URL);
+      headaudio = new HeadAudio(head.audioCtx);
+      await headaudio.loadModel(MODEL_URL);
+      // Map detected Oculus visemes onto the avatar's morph targets each frame.
+      headaudio.onvalue = (key, value) => {
+        if (head.mtAvatar[key]) {
+          Object.assign(head.mtAvatar[key], { newvalue: value, needsUpdate: true });
+        }
+      };
+      // Drive HeadAudio from TalkingHead's animation loop.
+      head.opt.update = headaudio.update.bind(headaudio);
+    }
+
+    // 3) Connect the bot's audio to the lip-sync engine.
+    function attachBotAudio(track) {
+      const stream = new MediaStream([track]);
+      // Chrome workaround: a media element must touch the remote stream for
+      // Web Audio to process it. The transport already plays it; this is a
+      // belt-and-suspenders muted tap.
+      const a = new Audio();
+      a.muted = true;
+      a.srcObject = stream;
+      const source = head.audioCtx.createMediaStreamSource(stream);
+      source.connect(headaudio);
+    }
+
+    // Probe for a usable mic with a timeout so a missing/denied device never
+    // hangs the connection. Returns true only if we actually got audio.
+    async function probeMic() {
+      if (!navigator.mediaDevices?.getUserMedia) return false;
+      try {
+        const stream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({ audio: true }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
+        ]);
+        stream.getTracks().forEach((t) => t.stop());
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    // Create the Pipecat client once. Reusing a single instance keeps the
+    // underlying (singleton) WebRTC call object healthy across reconnects.
+    function createClient() {
+      pcClient = new PipecatClient({
+        transport: new SmallWebRTCTransport(),
+        enableMic: hasMic,
+        enableCam: false,
+        callbacks: {
+          onConnected: () => setStatus("Connected", "on"),
+          onBotReady: () => {
+            connected = true;
+            el.overlay.classList.add("hidden");
+            el.text.disabled = false;
+            el.sendBtn.disabled = false;
+            el.hangupBtn.disabled = false;
+            setStatus(idleStatus, "on");
+          },
+          onTrackStarted: (track, participant) => {
+            if (track.kind === "audio" && participant && !participant.local) {
+              attachBotAudio(track);
+            }
+          },
+          onBotStartedSpeaking: () => setStatus("Speaking", "speaking"),
+          onBotStoppedSpeaking: () => setStatus(idleStatus, "on"),
+          onUserTranscript: (data) => { if (data.final) logLine("user", data.text); },
+          onBotTranscript: (data) => logLine("assistant", data.text),
+          onDisconnected: () => teardown(),
+        },
+      });
+    }
+
+    // 4) Connect to the Pipecat bot.
+    async function connect() {
+      el.connectBtn.disabled = true;
+      setStatus("Connecting…");
+      // Resume audio inside the user gesture.
+      head.start();
+      if (head.audioCtx.state !== "running") {
+        try { await head.audioCtx.resume(); } catch {}
+      }
+      headaudio.start();
+
+      try {
+        // Initialize devices first; otherwise the media manager's connect()
+        // never resolves when there is no mic/cam.
+        await pcClient.initDevices();
+        await pcClient.connect({ webrtcUrl: "/api/offer" });
+      } catch (err) {
+        console.error(err);
+        setStatus("Connection failed");
+        try { headaudio.stop(); } catch {}
+        el.connectBtn.disabled = false;
+        el.overlay.classList.remove("hidden");
+      }
+    }
+
+    function teardown() {
+      connected = false;
+      try { headaudio && headaudio.stop(); } catch {}
+      setStatus("Disconnected");
+      el.text.disabled = true;
+      el.sendBtn.disabled = true;
+      el.hangupBtn.disabled = true;
+      el.connectBtn.disabled = false;
+      el.overlay.classList.remove("hidden");
+    }
+
+    async function sendText() {
+      const value = el.text.value.trim();
+      if (!value || !pcClient || !connected) return;
+      el.text.value = "";
+      logLine("user", value);
+      try {
+        await pcClient.sendText(value, { run_immediately: true, audio_response: true });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function hangup() {
+      try { await pcClient?.disconnect(); } catch {}
+      teardown();
+    }
+
+    el.connectBtn.addEventListener("click", connect);
+    el.hangupBtn.addEventListener("click", hangup);
+    el.sendBtn.addEventListener("click", sendText);
+    el.text.addEventListener("keydown", (e) => { if (e.key === "Enter") sendText(); });
+
+    // Boot.
+    (async () => {
+      try {
+        await initAvatar();
+        await initHeadAudio();
+        hasMic = await probeMic();
+        idleStatus = hasMic ? "Listening" : "Ready (type below)";
+        createClient();
+        el.loadMsg.textContent = "Avatar ready.";
+        el.connectBtn.disabled = false;
+      } catch (err) {
+        console.error(err);
+        el.loadMsg.textContent = "Failed to load avatar: " + (err?.message || err);
+      }
+    })();
+  </script>
+</body>
+</html>

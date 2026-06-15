@@ -176,6 +176,14 @@ async def bot(runner_args: RunnerArguments):
 
 
 if __name__ == "__main__":
-    from pipecat.runner.run import main
+    from pathlib import Path
+
+    from fastapi.staticfiles import StaticFiles
+    from pipecat.runner.run import app, main
+
+    # Serve the custom 3D-avatar web client at /avatar (same origin as /api/offer).
+    client_dir = Path(__file__).parent / "client"
+    if client_dir.is_dir():
+        app.mount("/avatar", StaticFiles(directory=str(client_dir), html=True), name="avatar")
 
     main()
