@@ -121,6 +121,24 @@ model into memory.
 > No GPU required. The first run downloads the model; later runs are offline
 > except for Cartesia speech.
 
+### Troubleshooting
+
+- **`Error during completion: Connection error` (Ollama):** the bot can't reach
+  Ollama. Make sure `ollama serve` is running, then on WSL/Linux prefer
+  `127.0.0.1` over `localhost` — `localhost` may resolve to IPv6 (`::1`) while
+  Ollama listens on IPv4. Set `OLLAMA_BASE_URL=http://127.0.0.1:11434/v1`.
+- **`Error code: 400 ... invalid model name`:** the model name is empty. This
+  happens if `.env` has `OLLAMA_MODEL=` (blank). Set `OLLAMA_MODEL=qwen2.5:3b`
+  (and run `ollama pull qwen2.5:3b`). Blank values now fall back to defaults.
+- **No `sudo` password (e.g. WSL):** install Ollama without root by extracting
+  the release tarball into your home dir and adding it to `PATH`:
+  ```bash
+  curl -fL https://ollama.com/download/ollama-linux-amd64.tgz -o ollama.tgz
+  mkdir -p ~/.ollama-install && tar -xzf ollama.tgz -C ~/.ollama-install
+  echo 'export PATH="$HOME/.ollama-install/bin:$PATH"' >> ~/.bashrc
+  export PATH="$HOME/.ollama-install/bin:$PATH"
+  ```
+
 ## Project Structure
 
 ```
