@@ -80,6 +80,47 @@ The client is served same-origin by the bot (FastAPI `StaticFiles`) so the
 WebRTC offer to `/api/offer` has no CORS issues. The stock Pipecat Playground
 remains available at `/client/` for audio-only testing.
 
+## Run on your own machine (quick install)
+
+Works on macOS, Linux, or Windows (WSL recommended). Everything except Cartesia
+runs locally and free.
+
+**Prerequisites**
+- [Python 3.11+](https://www.python.org/downloads/)
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
+- [Ollama](https://ollama.com/download) (local LLM runtime)
+- A free [Cartesia](https://play.cartesia.ai) API key (for speech-to-text + text-to-speech)
+
+**Steps**
+```bash
+# 1. Clone
+git clone https://github.com/<owner>/<repo>.git
+cd <repo>
+
+# 2. Local LLM: install Ollama, then pull the model (one-time, ~2 GB)
+ollama pull qwen2.5:3b
+#   make sure the Ollama service is running (the installer starts it; or run `ollama serve`)
+
+# 3. Install the bot's Python deps
+cd server
+uv sync
+
+# 4. Configure your key
+cp .env.example .env
+#   edit .env and set CARTESIA_API_KEY=...  (LLM defaults to local Ollama — no key needed)
+
+# 5. Run the bot
+uv run bot.py
+```
+
+Then open **http://localhost:7860/avatar/** in Chrome and click **Start
+conversation**. Talk (if you have a mic) or type — the 3D avatar speaks and
+lip-syncs the replies. First reply may take a few seconds while Ollama loads the
+model into memory.
+
+> No GPU required. The first run downloads the model; later runs are offline
+> except for Cartesia speech.
+
 ## Project Structure
 
 ```
