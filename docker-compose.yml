@@ -6,9 +6,10 @@
 #
 # then open http://localhost:7860/avatar/
 #
-# The only required value is CARTESIA_API_KEY (used for STT + TTS). Everything
-# else (LLM, model, URLs) is wired automatically. The model is pulled once into
-# a named volume and reused on later runs.
+# The only required value is CARTESIA_API_KEY (used for STT). TTS runs locally
+# with Piper (no quota), the LLM runs locally with Ollama, and everything else
+# (model, URLs) is wired automatically. The model is pulled once into a named
+# volume and reused on later runs.
 
 services:
   # Local LLM runtime.
@@ -19,6 +20,9 @@ services:
       - ollama:/root/.ollama
     ports:
       - "11434:11434"
+    environment:
+      # Keep the model resident in RAM so there is no per-request cold start.
+      OLLAMA_KEEP_ALIVE: "-1"
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 5s
@@ -34,7 +38,7 @@ services:
         condition: service_healthy
     environment:
       OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["/bin/sh", "-c", "ollama pull ${OLLAMA_MODEL:-qwen2.5:3b}"]
+    entrypoint: ["/bin/sh", "-c", "ollama pull ${OLLAMA_MODEL:-qwen2.5:1.5b}"]
     restart: "no"
 
   # The voice assistant + avatar client.
@@ -49,11 +53,16 @@ services:
       ollama-pull:
         condition: service_completed_successfully
     environment:
+      # Cartesia is still used for Speech-to-Text (STT).
       CARTESIA_API_KEY: ${CARTESIA_API_KEY:?set CARTESIA_API_KEY in .env}
       CARTESIA_VOICE_ID: ${CARTESIA_VOICE_ID:-}
+      # Text-to-Speech: local Piper (no quota) by default; set to "cartesia" to use Cartesia.
+      TTS_PROVIDER: ${TTS_PROVIDER:-piper}
+      PIPER_VOICE: ${PIPER_VOICE:-en_US-amy-medium}
+      PIPER_DOWNLOAD_DIR: /app/piper_voices
       LLM_PROVIDER: ollama
       OLLAMA_BASE_URL: http://127.0.0.1:11434/v1
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:1.5b}
     restart: unless-stopped
 
 volumes:

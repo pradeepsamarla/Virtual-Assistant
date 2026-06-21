@@ -8,14 +8,18 @@ The LLM provider is **configurable** via the `LLM_PROVIDER` env var:
 - `ollama` (default) — a free, fully local model (no API key, runs on your machine)
 - `deepseek` — DeepSeek's cloud API (requires a funded `DEEPSEEK_API_KEY`)
 
+The TTS provider is **configurable** via the `TTS_PROVIDER` env var:
+- `piper` (default) — free, fully local, no quota; runs in-process on CPU
+- `cartesia` — Cartesia's cloud TTS (higher quality, but subject to a daily quota)
+
 ## Configuration
 
 - **Bot Type**: Web
 - **Transport(s)**: SmallWebRTC, Daily (WebRTC)
 - **Pipeline**: Cascade
   - **STT**: Cartesia
-  - **LLM**: Ollama (`qwen2.5:3b`, local, default) or DeepSeek (`deepseek-chat`)
-  - **TTS**: Cartesia
+  - **LLM**: Ollama (`qwen2.5:1.5b`, local, default) or DeepSeek (`deepseek-chat`)
+  - **TTS**: Piper (`en_US-amy-medium`, local, default) or Cartesia (cloud)
 
 Both LLM services are OpenAI-compatible, so switching providers only changes the
 LLM service in `server/bot.py` — the rest of the pipeline stays the same.
@@ -23,10 +27,25 @@ LLM service in `server/bot.py` — the rest of the pipeline stays the same.
 ### Using the local (Ollama) LLM
 
 1. Install Ollama: https://ollama.com/download
-2. Pull the model: `ollama pull qwen2.5:3b`
+2. Pull the model: `ollama pull qwen2.5:1.5b`
 3. Ensure `LLM_PROVIDER=ollama` in your `.env` (this is the default).
 
 No API key or balance is required — the model runs locally.
+
+### Using the local (Piper) TTS
+
+TTS defaults to local **Piper** (`TTS_PROVIDER=piper`) — no API key, no quota. The
+voice model (`PIPER_VOICE`, default `en_US-amy-medium`) downloads automatically on
+first use and runs on CPU. Set `TTS_PROVIDER=cartesia` to use Cartesia's cloud TTS
+instead.
+
+### Latency notes
+
+On CPU the **LLM** dominates response time. To keep replies snappy: the default
+model is the small/fast `qwen2.5:1.5b`, and the Docker setup sets
+`OLLAMA_KEEP_ALIVE=-1` so the model stays resident in RAM (no per-request cold
+start). Pipecat also streams the LLM output to TTS sentence-by-sentence, so the
+avatar starts speaking after the first sentence rather than the whole reply.
 
 ## Setup
 
@@ -51,7 +70,7 @@ No API key or balance is required — the model runs locally.
    # Edit .env and add your API keys
    ```
 
-   Required key: `CARTESIA_API_KEY` (used for both STT and TTS). The LLM is
+   Required key: `CARTESIA_API_KEY` (used for STT; TTS is local Piper by default). The LLM is
    local Ollama by default (no key needed); set `LLM_PROVIDER=deepseek` and
    `DEEPSEEK_API_KEY` to use DeepSeek instead. `DAILY_API_KEY` is only needed
    for the Daily transport.
@@ -105,7 +124,7 @@ Then open **http://localhost:7860/avatar/** and click **Start conversation**.
 
 What it starts:
 - `ollama` — local LLM runtime; a one-shot `ollama-pull` service auto-pulls
-  `qwen2.5:3b` into a persistent volume.
+  `qwen2.5:1.5b` into a persistent volume.
 - `bot` — the Pipecat bot + avatar client on port 7860, wired to the Ollama
   container automatically (`OLLAMA_BASE_URL`, model name, etc.).
 
@@ -137,7 +156,7 @@ git clone https://github.com/<owner>/<repo>.git
 cd <repo>
 
 # 2. Local LLM: install Ollama, then pull the model (one-time, ~2 GB)
-ollama pull qwen2.5:3b
+ollama pull qwen2.5:1.5b
 #   make sure the Ollama service is running (the installer starts it; or run `ollama serve`)
 
 # 3. Install the bot's Python deps
@@ -157,8 +176,8 @@ conversation**. Talk (if you have a mic) or type — the 3D avatar speaks and
 lip-syncs the replies. First reply may take a few seconds while Ollama loads the
 model into memory.
 
-> No GPU required. The first run downloads the model; later runs are offline
-> except for Cartesia speech.
+> No GPU required. The first run downloads the model + Piper voice; later runs
+> are offline except for Cartesia STT.
 
 ### Troubleshooting
 
@@ -167,8 +186,8 @@ model into memory.
   `127.0.0.1` over `localhost` — `localhost` may resolve to IPv6 (`::1`) while
   Ollama listens on IPv4. Set `OLLAMA_BASE_URL=http://127.0.0.1:11434/v1`.
 - **`Error code: 400 ... invalid model name`:** the model name is empty. This
-  happens if `.env` has `OLLAMA_MODEL=` (blank). Set `OLLAMA_MODEL=qwen2.5:3b`
-  (and run `ollama pull qwen2.5:3b`). Blank values now fall back to defaults.
+  happens if `.env` has `OLLAMA_MODEL=` (blank). Set `OLLAMA_MODEL=qwen2.5:1.5b`
+  (and run `ollama pull qwen2.5:1.5b`). Blank values now fall back to defaults.
 - **No `sudo` password (e.g. WSL):** install Ollama without root by extracting
   the release tarball into your home dir and adding it to `PATH`:
   ```bash
