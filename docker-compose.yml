@@ -1,15 +1,14 @@
 # One-command local deploy: Ollama (local LLM) + the Pipecat bot with the
 # 3D-avatar web client. Usage:
 #
-#   echo "CARTESIA_API_KEY=sk_car_..." > .env
 #   docker compose up --build
 #
 # then open http://localhost:7860/avatar/
 #
-# The only required value is CARTESIA_API_KEY (used for STT). TTS runs locally
-# with Piper (no quota), the LLM runs locally with Ollama, and everything else
-# (model, URLs) is wired automatically. The model is pulled once into a named
-# volume and reused on later runs.
+# Runs fully local and free by default: STT with Whisper, LLM with Ollama, and
+# TTS with Piper - no API keys or quotas. The Ollama model is pulled once into a
+# named volume and reused on later runs. To use Cartesia (cloud) for STT and/or
+# TTS instead, set CARTESIA_API_KEY plus STT_PROVIDER=cartesia / TTS_PROVIDER=cartesia.
 
 services:
   # Local LLM runtime.
@@ -53,8 +52,11 @@ services:
       ollama-pull:
         condition: service_completed_successfully
     environment:
-      # Cartesia is still used for Speech-to-Text (STT).
-      CARTESIA_API_KEY: ${CARTESIA_API_KEY:?set CARTESIA_API_KEY in .env}
+      # Speech-to-Text: local Whisper (no quota) by default; set to "cartesia" to use Cartesia.
+      STT_PROVIDER: ${STT_PROVIDER:-whisper}
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      # Cartesia is only needed if STT_PROVIDER or TTS_PROVIDER is set to "cartesia".
+      CARTESIA_API_KEY: ${CARTESIA_API_KEY:-}
       CARTESIA_VOICE_ID: ${CARTESIA_VOICE_ID:-}
       # Text-to-Speech: local Piper (no quota) by default; set to "cartesia" to use Cartesia.
       TTS_PROVIDER: ${TTS_PROVIDER:-piper}
