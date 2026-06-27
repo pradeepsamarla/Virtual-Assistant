@@ -48,6 +48,10 @@ services:
     # Host networking lets WebRTC media reach the browser without publishing an
     # ephemeral UDP port range (required on Linux/WSL2 for SmallWebRTC).
     network_mode: host
+    # Serve the avatar web client straight from disk so UI tweaks take effect on
+    # a page refresh - no image rebuild needed.
+    volumes:
+      - ./server/client:/app/client:ro
     depends_on:
       ollama-pull:
         condition: service_completed_successfully
