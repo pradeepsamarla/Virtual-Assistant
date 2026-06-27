@@ -169,15 +169,17 @@
       head.opt.update = headaudio.update.bind(headaudio);
     }
 
-    // 3) Connect the bot's audio to the lip-sync engine.
+    // 3) Play the bot's audio and feed it to the lip-sync engine.
+    let botAudioEl;
     function attachBotAudio(track) {
       const stream = new MediaStream([track]);
-      // Chrome workaround: a media element must touch the remote stream for
-      // Web Audio to process it. The transport already plays it; this is a
-      // belt-and-suspenders muted tap.
-      const a = new Audio();
-      a.muted = true;
-      a.srcObject = stream;
+      // The SmallWebRTC transport does not play remote audio itself, so we play
+      // it here. Attaching the stream to a media element is also required for
+      // Web Audio to process the remote track in Chrome.
+      botAudioEl = botAudioEl || new Audio();
+      botAudioEl.autoplay = true;
+      botAudioEl.srcObject = stream;
+      botAudioEl.play().catch((err) => console.warn("Audio playback blocked:", err));
       const source = head.audioCtx.createMediaStreamSource(stream);
       source.connect(headaudio);
     }
