@@ -218,7 +218,10 @@
             setStatus(idleStatus, "on");
           },
           onTrackStarted: (track, participant) => {
-            if (track.kind === "audio" && participant && !participant.local) {
+            // The SmallWebRTC transport fires this only for remote tracks and
+            // may omit the participant arg, so don't require it - just skip any
+            // local track.
+            if (track.kind === "audio" && !participant?.local) {
               attachBotAudio(track);
             }
           },
