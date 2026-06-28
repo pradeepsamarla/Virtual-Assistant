@@ -1,14 +1,14 @@
 # One-command local deploy: Ollama (local LLM) + the Pipecat bot with the
 # 3D-avatar web client. Usage:
 #
-#   echo "CARTESIA_API_KEY=sk_car_..." > .env
 #   docker compose up --build
 #
 # then open http://localhost:7860/avatar/
 #
-# The only required value is CARTESIA_API_KEY (used for STT + TTS). Everything
-# else (LLM, model, URLs) is wired automatically. The model is pulled once into
-# a named volume and reused on later runs.
+# Runs fully local and free by default: STT with Whisper, LLM with Ollama, and
+# TTS with Piper - no API keys or quotas. The Ollama model is pulled once into a
+# named volume and reused on later runs. To use Cartesia (cloud) for STT and/or
+# TTS instead, set CARTESIA_API_KEY plus STT_PROVIDER=cartesia / TTS_PROVIDER=cartesia.
 
 services:
   # Local LLM runtime.
@@ -19,6 +19,9 @@ services:
       - ollama:/root/.ollama
     ports:
       - "11434:11434"
+    environment:
+      # Keep the model resident in RAM so there is no per-request cold start.
+      OLLAMA_KEEP_ALIVE: "-1"
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 5s
@@ -34,7 +37,7 @@ services:
         condition: service_healthy
     environment:
       OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["/bin/sh", "-c", "ollama pull ${OLLAMA_MODEL:-qwen2.5:3b}"]
+    entrypoint: ["/bin/sh", "-c", "ollama pull ${OLLAMA_MODEL:-qwen2.5:1.5b}"]
     restart: "no"
 
   # The voice assistant + avatar client.
@@ -45,15 +48,34 @@ services:
     # Host networking lets WebRTC media reach the browser without publishing an
     # ephemeral UDP port range (required on Linux/WSL2 for SmallWebRTC).
     network_mode: host
+    # Serve the avatar web client and bot code straight from disk so UI and
+    # prompt tweaks take effect on a restart - no image rebuild needed.
+    volumes:
+      - ./server/client:/app/client:ro
+      - ./server/bot.py:/app/bot.py:ro
     depends_on:
       ollama-pull:
         condition: service_completed_successfully
     environment:
-      CARTESIA_API_KEY: ${CARTESIA_API_KEY:?set CARTESIA_API_KEY in .env}
+      # Speech-to-Text: local Whisper (no quota) by default; set to "cartesia" to use Cartesia.
+      STT_PROVIDER: ${STT_PROVIDER:-whisper}
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
+      # Cartesia is only needed if STT_PROVIDER or TTS_PROVIDER is set to "cartesia".
+      CARTESIA_API_KEY: ${CARTESIA_API_KEY:-}
       CARTESIA_VOICE_ID: ${CARTESIA_VOICE_ID:-}
+      # Text-to-Speech: local Piper (no quota) by default; set to "cartesia" to use Cartesia.
+      TTS_PROVIDER: ${TTS_PROVIDER:-piper}
+      PIPER_VOICE: ${PIPER_VOICE:-en_US-amy-medium}
+      PIPER_DOWNLOAD_DIR: /app/piper_voices
       LLM_PROVIDER: ollama
       OLLAMA_BASE_URL: http://127.0.0.1:11434/v1
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:1.5b}
+      # Persona: "assistant" (default) or "tutor" (Grade 1 spelling + maths tutor).
+      ASSISTANT_MODE: ${ASSISTANT_MODE:-assistant}
+      # Optional tutor settings (used when ASSISTANT_MODE=tutor):
+      TUTOR_STUDENT_NAME: ${TUTOR_STUDENT_NAME:-}
+      TUTOR_SPELLING_WORDS: ${TUTOR_SPELLING_WORDS:-}
+      TUTOR_MATHS_FOCUS: ${TUTOR_MATHS_FOCUS:-}
     restart: unless-stopped
 
 volumes:

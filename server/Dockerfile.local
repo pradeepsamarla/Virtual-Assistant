@@ -2,8 +2,9 @@
 # (The Pipecat Cloud image lives in ./Dockerfile and uses an arm64-only base.)
 FROM python:3.12-slim
 
-# uv: fast Python package manager.
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# uv: fast Python package manager. Installed from PyPI (avoids pulling the
+# ghcr.io/astral-sh/uv image, which can time out on some networks).
+RUN pip install --no-cache-dir uv
 
 # Runtime native libs:
 #   libgomp1                       - onnxruntime (Silero VAD)
@@ -29,6 +30,19 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project --no-dev
+
+# Pre-download the default Piper voice so TTS works offline with no first-use
+# download lag. Override at build time with --build-arg PIPER_VOICE=...
+ARG PIPER_VOICE=en_US-amy-medium
+ENV PIPER_DOWNLOAD_DIR=/app/piper_voices
+RUN mkdir -p "$PIPER_DOWNLOAD_DIR" \
+    && /app/.venv/bin/python -c "import os; from pathlib import Path; from piper.download_voices import download_voice; download_voice(os.environ.get('PIPER_VOICE','en_US-amy-medium'), Path(os.environ['PIPER_DOWNLOAD_DIR']))"
+
+# Pre-download the default Whisper STT model into the image's HF cache so STT
+# works offline with no first-use download lag. Override with --build-arg WHISPER_MODEL=...
+ARG WHISPER_MODEL=base
+ENV HF_HOME=/app/hf_cache
+RUN /app/.venv/bin/python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ.get('WHISPER_MODEL','base'), device='cpu', compute_type='default')"
 
 # Application code + the avatar client served at /avatar/.
 COPY bot.py ./

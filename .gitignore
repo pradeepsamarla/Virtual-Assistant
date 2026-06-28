@@ -216,3 +216,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Node.js (client/)
+
+# Local Piper voice cache (downloaded at runtime / pre-baked in image)
+server/piper_voices/

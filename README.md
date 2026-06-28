@@ -4,18 +4,29 @@ A virtual interactive voice assistant built with [Pipecat](https://docs.pipecat.
 It listens to you, answers your queries, and reasons through problems in real
 time over a cascade voice pipeline (STT → LLM → TTS).
 
+By default it runs **fully local and free** — no API keys, no quotas. Each stage
+is configurable via env vars:
+
+The STT provider is **configurable** via the `STT_PROVIDER` env var:
+- `whisper` (default) — free, fully local, no quota; runs in-process on CPU
+- `cartesia` — Cartesia's cloud STT (subject to a daily quota)
+
 The LLM provider is **configurable** via the `LLM_PROVIDER` env var:
 - `ollama` (default) — a free, fully local model (no API key, runs on your machine)
 - `deepseek` — DeepSeek's cloud API (requires a funded `DEEPSEEK_API_KEY`)
+
+The TTS provider is **configurable** via the `TTS_PROVIDER` env var:
+- `piper` (default) — free, fully local, no quota; runs in-process on CPU
+- `cartesia` — Cartesia's cloud TTS (higher quality, but subject to a daily quota)
 
 ## Configuration
 
 - **Bot Type**: Web
 - **Transport(s)**: SmallWebRTC, Daily (WebRTC)
 - **Pipeline**: Cascade
-  - **STT**: Cartesia
-  - **LLM**: Ollama (`qwen2.5:3b`, local, default) or DeepSeek (`deepseek-chat`)
-  - **TTS**: Cartesia
+  - **STT**: Whisper (`base`, local, default) or Cartesia (cloud)
+  - **LLM**: Ollama (`qwen2.5:1.5b`, local, default) or DeepSeek (`deepseek-chat`)
+  - **TTS**: Piper (`en_US-amy-medium`, local, default) or Cartesia (cloud)
 
 Both LLM services are OpenAI-compatible, so switching providers only changes the
 LLM service in `server/bot.py` — the rest of the pipeline stays the same.
@@ -23,10 +34,57 @@ LLM service in `server/bot.py` — the rest of the pipeline stays the same.
 ### Using the local (Ollama) LLM
 
 1. Install Ollama: https://ollama.com/download
-2. Pull the model: `ollama pull qwen2.5:3b`
+2. Pull the model: `ollama pull qwen2.5:1.5b`
 3. Ensure `LLM_PROVIDER=ollama` in your `.env` (this is the default).
 
 No API key or balance is required — the model runs locally.
+
+### Using the local (Whisper) STT
+
+STT defaults to local **Whisper** (`STT_PROVIDER=whisper`) — no API key, no quota.
+The model (`WHISPER_MODEL`, default `base`) downloads automatically on first use
+and runs on CPU. Use a smaller model (`tiny`) for speed or a larger one (`small`,
+`medium`) for accuracy. Set `STT_PROVIDER=cartesia` to use Cartesia's cloud STT instead.
+
+### Using the local (Piper) TTS
+
+TTS defaults to local **Piper** (`TTS_PROVIDER=piper`) — no API key, no quota. The
+voice model (`PIPER_VOICE`, default `en_US-amy-medium`) downloads automatically on
+first use and runs on CPU. Set `TTS_PROVIDER=cartesia` to use Cartesia's cloud TTS
+instead.
+
+### Tutor mode (kids' spelling & maths practice)
+
+Set `ASSISTANT_MODE=tutor` to turn the assistant into a warm, patient tutor for a
+Grade 1 / Year 1 (British curriculum) child. It practises **spelling** and
+**maths** interactively: it asks one question at a time, waits for the child's
+answer (spoken or typed), praises effort, gives gentle hints, and keeps it
+game-like.
+
+Optional settings (also work by just typing them into the chat mid-session):
+
+| Variable | Example | Purpose |
+| --- | --- | --- |
+| `TUTOR_STUDENT_NAME` | `Aarav` | Greets the child by name |
+| `TUTOR_SPELLING_WORDS` | `cat, hat, sun, big, red` | This session's spelling list |
+| `TUTOR_MATHS_FOCUS` | `addition up to 10` | What maths to drill |
+
+Tutor mode is best with a slightly larger model for coherent, reliable
+questioning — use `OLLAMA_MODEL=qwen2.5:3b` (the small `qwen2.5:1.5b` default can
+ramble or muddle the practice flow). Example:
+
+```bash
+ASSISTANT_MODE=tutor TUTOR_STUDENT_NAME=Aarav OLLAMA_MODEL=qwen2.5:3b \
+  docker compose up -d
+```
+
+### Latency notes
+
+On CPU the **LLM** dominates response time. To keep replies snappy: the default
+model is the small/fast `qwen2.5:1.5b`, and the Docker setup sets
+`OLLAMA_KEEP_ALIVE=-1` so the model stays resident in RAM (no per-request cold
+start). Pipecat also streams the LLM output to TTS sentence-by-sentence, so the
+avatar starts speaking after the first sentence rather than the whole reply.
 
 ## Setup
 
@@ -51,10 +109,10 @@ No API key or balance is required — the model runs locally.
    # Edit .env and add your API keys
    ```
 
-   Required key: `CARTESIA_API_KEY` (used for both STT and TTS). The LLM is
-   local Ollama by default (no key needed); set `LLM_PROVIDER=deepseek` and
-   `DEEPSEEK_API_KEY` to use DeepSeek instead. `DAILY_API_KEY` is only needed
-   for the Daily transport.
+   No keys are required by default — STT (Whisper), LLM (Ollama), and TTS (Piper)
+   all run locally. Keys are only needed if you opt into a cloud provider:
+   `CARTESIA_API_KEY` (for `STT_PROVIDER=cartesia` / `TTS_PROVIDER=cartesia`),
+   `DEEPSEEK_API_KEY` (for `LLM_PROVIDER=deepseek`), or `DAILY_API_KEY` (Daily transport).
 
 4. **Run the bot**:
 
@@ -86,18 +144,15 @@ The whole stack (local LLM + bot + 3D-avatar client) runs from Docker Compose.
 You don't install Python, uv, or Ollama — only Docker. The model is pulled
 automatically into a named volume on first run and reused afterwards.
 
-**Prerequisites:** [Docker](https://docs.docker.com/get-docker/) (with Compose v2)
-and a free [Cartesia](https://play.cartesia.ai) API key.
+**Prerequisites:** [Docker](https://docs.docker.com/get-docker/) (with Compose v2).
+No API keys are required — the whole pipeline runs locally by default.
 
 ```bash
 # 1. Clone
 git clone https://github.com/<owner>/<repo>.git
 cd <repo>
 
-# 2. Provide your Cartesia key (the only required value)
-echo "CARTESIA_API_KEY=sk_car_..." > .env
-
-# 3. Bring everything up (first run builds the image + pulls the model)
+# 2. Bring everything up (first run builds the image + pulls the model)
 docker compose up --build
 ```
 
@@ -105,12 +160,13 @@ Then open **http://localhost:7860/avatar/** and click **Start conversation**.
 
 What it starts:
 - `ollama` — local LLM runtime; a one-shot `ollama-pull` service auto-pulls
-  `qwen2.5:3b` into a persistent volume.
+  `qwen2.5:1.5b` into a persistent volume.
 - `bot` — the Pipecat bot + avatar client on port 7860, wired to the Ollama
   container automatically (`OLLAMA_BASE_URL`, model name, etc.).
 
-Optional overrides go in `.env` (e.g. `CARTESIA_VOICE_ID=...`,
-`OLLAMA_MODEL=qwen2.5:7b`). To stop: `docker compose down` (add `-v` to also
+Optional overrides go in `.env` (e.g. `WHISPER_MODEL=small`,
+`OLLAMA_MODEL=qwen2.5:7b`, or `STT_PROVIDER=cartesia` + `CARTESIA_API_KEY=...`
+to use the cloud provider). To stop: `docker compose down` (add `-v` to also
 delete the cached model).
 
 > **Networking note:** the `bot` service uses `network_mode: host` so WebRTC
@@ -121,14 +177,13 @@ delete the cached model).
 
 ## Run on your own machine (quick install)
 
-Works on macOS, Linux, or Windows (WSL recommended). Everything except Cartesia
-runs locally and free.
+Works on macOS, Linux, or Windows (WSL recommended). Everything runs locally and
+free by default — no API keys.
 
 **Prerequisites**
 - [Python 3.11+](https://www.python.org/downloads/)
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
 - [Ollama](https://ollama.com/download) (local LLM runtime)
-- A free [Cartesia](https://play.cartesia.ai) API key (for speech-to-text + text-to-speech)
 
 **Steps**
 ```bash
@@ -137,16 +192,16 @@ git clone https://github.com/<owner>/<repo>.git
 cd <repo>
 
 # 2. Local LLM: install Ollama, then pull the model (one-time, ~2 GB)
-ollama pull qwen2.5:3b
+ollama pull qwen2.5:1.5b
 #   make sure the Ollama service is running (the installer starts it; or run `ollama serve`)
 
 # 3. Install the bot's Python deps
 cd server
 uv sync
 
-# 4. Configure your key
+# 4. (Optional) configure overrides — no keys needed for the local default
 cp .env.example .env
-#   edit .env and set CARTESIA_API_KEY=...  (LLM defaults to local Ollama — no key needed)
+#   defaults: STT=Whisper, LLM=Ollama, TTS=Piper (all local, no key required)
 
 # 5. Run the bot
 uv run bot.py
@@ -157,8 +212,8 @@ conversation**. Talk (if you have a mic) or type — the 3D avatar speaks and
 lip-syncs the replies. First reply may take a few seconds while Ollama loads the
 model into memory.
 
-> No GPU required. The first run downloads the model; later runs are offline
-> except for Cartesia speech.
+> No GPU required. The first run downloads the Ollama model, the Whisper STT
+> model, and the Piper voice; later runs are fully offline.
 
 ### Troubleshooting
 
@@ -167,8 +222,8 @@ model into memory.
   `127.0.0.1` over `localhost` — `localhost` may resolve to IPv6 (`::1`) while
   Ollama listens on IPv4. Set `OLLAMA_BASE_URL=http://127.0.0.1:11434/v1`.
 - **`Error code: 400 ... invalid model name`:** the model name is empty. This
-  happens if `.env` has `OLLAMA_MODEL=` (blank). Set `OLLAMA_MODEL=qwen2.5:3b`
-  (and run `ollama pull qwen2.5:3b`). Blank values now fall back to defaults.
+  happens if `.env` has `OLLAMA_MODEL=` (blank). Set `OLLAMA_MODEL=qwen2.5:1.5b`
+  (and run `ollama pull qwen2.5:1.5b`). Blank values now fall back to defaults.
 - **No `sudo` password (e.g. WSL):** install Ollama without root by extracting
   the release tarball into your home dir and adding it to `PATH`:
   ```bash
