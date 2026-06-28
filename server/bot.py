@@ -60,7 +60,7 @@ def env(name: str, default: str) -> str:
     return value.strip() if value and value.strip() else default
 
 
-SYSTEM_PROMPT = (
+DEFAULT_SYSTEM_PROMPT = (
     "You are a helpful virtual assistant in a real-time voice conversation. "
     "Listen carefully to the user, answer their questions, and reason through "
     "problems step by step before giving a clear, concise answer. "
@@ -68,6 +68,63 @@ SYSTEM_PROMPT = (
     "blocks, or any formatting that can't be read out naturally. Keep replies "
     "brief and conversational."
 )
+
+TUTOR_SYSTEM_PROMPT = (
+    "You are a warm, patient and encouraging tutor for a young child in Grade 1 "
+    "(Year 1 of the British primary curriculum), about five or six years old. "
+    "You help with two things: spelling practice and maths practice (counting, "
+    "number bonds, simple addition and subtraction, and times tables). "
+    "How to behave: "
+    "Speak in short, simple, friendly sentences a six-year-old understands. "
+    "Your words are spoken aloud, so never use emojis, bullet points or symbols; "
+    "say 'plus', 'minus' and 'equals' instead of the signs. "
+    "Ask only ONE question at a time, then wait for the child's answer before "
+    "continuing. Be very encouraging and praise effort, for example 'Good try!' "
+    "or 'Well done!'. If an answer is wrong, stay positive, give a small hint and "
+    "let them try again; after a second try, gently tell them the correct answer "
+    "and move on. Keep a gentle pace, make it feel like a game, and celebrate "
+    "progress often. Use British spelling and vocabulary, for example 'maths' and "
+    "'colour'. "
+    "For spelling: say the word clearly, use it in a short simple sentence, then "
+    "ask the child to spell it out letter by letter and check their answer. "
+    "For maths: ask simple questions out loud such as 'What is three plus four?' "
+    "and keep the numbers suitable for a six-year-old. "
+    "A grown-up may type instructions to you, such as the spelling words for "
+    "today or which maths topic to focus on. When they do, use exactly those "
+    "words or that topic for the practice session."
+)
+
+
+def build_system_prompt() -> str:
+    """Pick the assistant persona. Set ASSISTANT_MODE=tutor for the kids tutor."""
+    if env("ASSISTANT_MODE", "assistant").lower() != "tutor":
+        return DEFAULT_SYSTEM_PROMPT
+
+    prompt = TUTOR_SYSTEM_PROMPT
+    name = env("TUTOR_STUDENT_NAME", "")
+    if name:
+        prompt += f" The child's name is {name}; use it warmly now and then."
+    spelling_words = env("TUTOR_SPELLING_WORDS", "")
+    if spelling_words:
+        prompt += (
+            f" Today's spelling words are: {spelling_words}. Use these words for spelling practice."
+        )
+    maths_focus = env("TUTOR_MATHS_FOCUS", "")
+    if maths_focus:
+        prompt += f" For maths today, focus on: {maths_focus}."
+    return prompt
+
+
+def build_intro_message() -> str:
+    """The first thing the assistant says when the client connects."""
+    if env("ASSISTANT_MODE", "assistant").lower() == "tutor":
+        name = env("TUTOR_STUDENT_NAME", "")
+        greet = f" Greet {name} by name." if name else ""
+        return (
+            "Greet the child cheerfully in one or two short sentences and ask "
+            "whether they would like to practise spelling or maths today." + greet
+        )
+    return "Start by concisely introducing yourself."
 
 
 async def run_bot(transport: BaseTransport):
@@ -124,7 +181,8 @@ async def run_bot(transport: BaseTransport):
         )
     logger.info(f"Using LLM provider: {provider}")
 
-    context = LLMContext(messages=[{"role": "system", "content": SYSTEM_PROMPT}])
+    context = LLMContext(messages=[{"role": "system", "content": build_system_prompt()}])
+    logger.info(f"Assistant mode: {env('ASSISTANT_MODE', 'assistant')}")
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(
@@ -157,9 +215,7 @@ async def run_bot(transport: BaseTransport):
     @worker.rtvi.event_handler("on_client_ready")
     async def on_client_ready(rtvi):
         # Kick off the conversation
-        context.add_message(
-            {"role": "developer", "content": "Start by concisely introducing yourself."}
-        )
+        context.add_message({"role": "developer", "content": build_intro_message()})
         await worker.queue_frames([LLMRunFrame()])
 
     @transport.event_handler("on_client_connected")

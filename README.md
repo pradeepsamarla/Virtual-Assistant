@@ -53,6 +53,31 @@ voice model (`PIPER_VOICE`, default `en_US-amy-medium`) downloads automatically 
 first use and runs on CPU. Set `TTS_PROVIDER=cartesia` to use Cartesia's cloud TTS
 instead.
 
+### Tutor mode (kids' spelling & maths practice)
+
+Set `ASSISTANT_MODE=tutor` to turn the assistant into a warm, patient tutor for a
+Grade 1 / Year 1 (British curriculum) child. It practises **spelling** and
+**maths** interactively: it asks one question at a time, waits for the child's
+answer (spoken or typed), praises effort, gives gentle hints, and keeps it
+game-like.
+
+Optional settings (also work by just typing them into the chat mid-session):
+
+| Variable | Example | Purpose |
+| --- | --- | --- |
+| `TUTOR_STUDENT_NAME` | `Aarav` | Greets the child by name |
+| `TUTOR_SPELLING_WORDS` | `cat, hat, sun, big, red` | This session's spelling list |
+| `TUTOR_MATHS_FOCUS` | `addition up to 10` | What maths to drill |
+
+Tutor mode is best with a slightly larger model for coherent, reliable
+questioning — use `OLLAMA_MODEL=qwen2.5:3b` (the small `qwen2.5:1.5b` default can
+ramble or muddle the practice flow). Example:
+
+```bash
+ASSISTANT_MODE=tutor TUTOR_STUDENT_NAME=Aarav OLLAMA_MODEL=qwen2.5:3b \
+  docker compose up -d
+```
+
 ### Latency notes
 
 On CPU the **LLM** dominates response time. To keep replies snappy: the default

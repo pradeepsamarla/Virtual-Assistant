@@ -48,10 +48,11 @@ services:
     # Host networking lets WebRTC media reach the browser without publishing an
     # ephemeral UDP port range (required on Linux/WSL2 for SmallWebRTC).
     network_mode: host
-    # Serve the avatar web client straight from disk so UI tweaks take effect on
-    # a page refresh - no image rebuild needed.
+    # Serve the avatar web client and bot code straight from disk so UI and
+    # prompt tweaks take effect on a restart - no image rebuild needed.
     volumes:
       - ./server/client:/app/client:ro
+      - ./server/bot.py:/app/bot.py:ro
     depends_on:
       ollama-pull:
         condition: service_completed_successfully
@@ -69,6 +70,12 @@ services:
       LLM_PROVIDER: ollama
       OLLAMA_BASE_URL: http://127.0.0.1:11434/v1
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:1.5b}
+      # Persona: "assistant" (default) or "tutor" (Grade 1 spelling + maths tutor).
+      ASSISTANT_MODE: ${ASSISTANT_MODE:-assistant}
+      # Optional tutor settings (used when ASSISTANT_MODE=tutor):
+      TUTOR_STUDENT_NAME: ${TUTOR_STUDENT_NAME:-}
+      TUTOR_SPELLING_WORDS: ${TUTOR_SPELLING_WORDS:-}
+      TUTOR_MATHS_FOCUS: ${TUTOR_MATHS_FOCUS:-}
     restart: unless-stopped
 
 volumes:
